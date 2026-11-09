@@ -683,7 +683,10 @@ const storage = {
   }
 };
 
-// Voice selection uses only voices actually installed or supplied by the browser.
+// Use recognised female voice names; never silently use the system default.
+function isFemaleVoice(v) {
+  return !/\bmale\b/i.test(v.name.replace(/female/ig, '')) && /female|hazel|natasha|karen|catherine|sonia|libby|samantha|zira|aria|jenny|susan|heera|linda|moira|tessa|salli|joanna|sara|ava|allison|serena|victoria|fiona|veena/i.test(v.name);
+}
 function voiceScore(v) {
   const name = v.name.toLowerCase(),
     lang = v.lang.toLowerCase();
@@ -691,16 +694,15 @@ function voiceScore(v) {
   return (lang === 'en-nz' ? 1000 : lang === 'en-au' ? 700 : lang.startsWith('en') ? 100 : 0) + (female ? 400 : 0) + (/natural|neural|premium|enhanced/.test(name) ? 200 : 0);
 }
 function getLearningVoices() {
-  return window.speechSynthesis?.getVoices().filter(v => /^en(?:-|$)/i.test(v.lang)).sort((a, b) => voiceScore(b) - voiceScore(a) || a.name.localeCompare(b.name)) || [];
+  return window.speechSynthesis?.getVoices().filter(v => /^en(?:-|$)/i.test(v.lang) && isFemaleVoice(v)).sort((a, b) => voiceScore(b) - voiceScore(a) || a.name.localeCompare(b.name)) || [];
 }
 function configureVoice(utterance) {
   const voices = getLearningVoices(),
-    saved = storage.getItem('esl_voice');
+    saved = storage.getItem('esl_female_voice_v3');
   const voice = voices.find(v => v.voiceURI === saved) || voices[0];
-  if (voice) {
-    utterance.voice = voice;
-    utterance.lang = voice.lang;
-  } else utterance.lang = 'en-NZ';
+  if (!voice) return null;
+  utterance.voice = voice;
+  utterance.lang = voice.lang;
   utterance.rate = Math.min(1.1, Math.max(0.8, Number(storage.getItem('esl_voice_rate')) || 1));
   utterance.pitch = 1;
   utterance.volume = 1;
@@ -717,7 +719,7 @@ function App() {
   const [lastSpokenText, setLastSpokenText] = useState('');
   const [isSpeakingVisual, setIsSpeakingVisual] = useState(false);
   const [voices, setVoices] = useState([]);
-  const [voiceId, setVoiceId] = useState(() => storage.getItem('esl_voice') || '');
+  const [voiceId, setVoiceId] = useState(() => storage.getItem('esl_female_voice_v3') || '');
   const [voiceRate, setVoiceRate] = useState(() => Number(storage.getItem('esl_voice_rate')) || 1);
   const [audioMessage, setAudioMessage] = useState('');
   useEffect(() => {
@@ -750,6 +752,11 @@ function App() {
     setLastSpokenText(text);
     setAudioMessage('');
     const utterance = configureVoice(new SpeechSynthesisUtterance(text));
+    if (!utterance) {
+      setAudioMessage('No recognised female English voice has loaded. Try Microsoft Edge or enable a female English voice in your device settings, then reload.');
+      setIsSpeakingVisual(false);
+      return;
+    }
     utterance.onstart = () => setIsSpeakingVisual(true);
     utterance.onend = () => setIsSpeakingVisual(false);
     utterance.onerror = e => {
@@ -831,7 +838,7 @@ function App() {
     className: "bg-white border border-teal-200 rounded-2xl p-4"
   }, /*#__PURE__*/React.createElement("summary", {
     className: "font-bold text-teal-800 cursor-pointer"
-  }, "\uD83D\uDD0A Reading voice \u2014 choose and listen"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDD0A Female reading voice \u2014 choose and listen"), /*#__PURE__*/React.createElement("div", {
     className: "mt-4 flex flex-wrap gap-4 items-end"
   }, /*#__PURE__*/React.createElement("label", {
     className: "text-sm font-semibold"
@@ -840,13 +847,13 @@ function App() {
     value: voiceId && voices.some(v => v.voiceURI === voiceId) ? voiceId : '',
     onChange: e => {
       setVoiceId(e.target.value);
-      storage.setItem('esl_voice', e.target.value);
+      storage.setItem('esl_female_voice_v3', e.target.value);
       window.speechSynthesis?.cancel();
       setIsSpeakingVisual(false);
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "Automatic \u2014 prefer female NZ / Australian voice"), voices.map(v => /*#__PURE__*/React.createElement("option", {
+  }, "Automatic \u2014 female voice only"), voices.map(v => /*#__PURE__*/React.createElement("option", {
     key: v.voiceURI,
     value: v.voiceURI
   }, v.name, " (", v.lang, ")")))), /*#__PURE__*/React.createElement("label", {
@@ -866,10 +873,13 @@ function App() {
     className: "bg-teal-700 text-white rounded-xl px-4 py-2 font-bold",
     onClick: () => speakText('Welcome to our learning space. Take your time, listen, and read along with me.')
   }, "Listen to this voice")), /*#__PURE__*/React.createElement("p", {
+    className: "text-sm font-semibold text-teal-800 mt-3",
+    role: "status"
+  }, "Selected female voice: ", voices.find(v => v.voiceURI === voiceId)?.name || voices[0]?.name || 'Waiting for an available voice'), /*#__PURE__*/React.createElement("p", {
     className: "text-sm text-slate-600 mt-3"
   }, "Choose the voice that sounds best to you. Voices depend on your device. A New Zealand voice does not guarantee a Polynesian accent. Samoan pronunciation needs a fluent speaker to check it."), voices.length === 0 && /*#__PURE__*/React.createElement("p", {
     className: "text-sm mt-2"
-  }, "No English voices have loaded yet. Try enabling audio."), audioMessage && /*#__PURE__*/React.createElement("p", {
+  }, "No recognised female English voices have loaded yet. Try enabling audio or another browser."), audioMessage && /*#__PURE__*/React.createElement("p", {
     role: "status",
     className: "text-sm text-rose-700 mt-2"
   }, audioMessage))), isSpeakingVisual && /*#__PURE__*/React.createElement("div", {
@@ -1638,7 +1648,12 @@ function ReaderPage({
       }
       setActiveSentenceIdx(index);
       const utterance = new SpeechSynthesisUtterance(currentBook.sentences[index]);
-      configureVoice(utterance);
+      if (!configureVoice(utterance)) {
+        setIsPlaying(false);
+        setActiveSentenceIdx(-1);
+        alert('No recognised female English voice is available. Try another browser or enable a female English voice on your device.');
+        return;
+      }
       utterance.onend = () => readLine(index + 1);
       utterance.onerror = () => {
         if (runToken.current === token) setIsPlaying(false);
